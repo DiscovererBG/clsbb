@@ -1,119 +1,251 @@
 /**
- * Sub-Store rename.js（长期版）
- * ✅ 输出：国旗 + 国家 + 倍率（从机场原名提取）+ 原“| 后缀”
- * ✅ 协议显示：不用写进名字（Stash/Mihomo 自己会显示 vless / hy2 / udp / xudp）
- *    你要的“像示例那样协议自动识别显示”，本质是客户端 UI 显示，不是改名脚本生成。
- *
- * 推荐参数：#flag&bl&blgd&nm
+ * Sub-Store rename.js（长期版 / 终版思路）
+ * 目标输出：🇯🇵日本东京01-0.1倍 | 高速专线推荐
+ * 关键：
+ * 1) 不做全局重新编号（解决你“序号和原始不一致”）
+ * 2) 国旗：能识别国家就加；识别不到也不隐藏（默认 nm=true）
+ * 3) 倍率：尽量从原名里提取并原样保留（0.1倍 / 2× / x2 / ˣ² …）
+ * 4) 后缀：高速/专线/推荐/AWS/移动联通电信/IPLC/IEPL/家宽…全部保留
  */
 
-const inArg = $arguments;
+// Sub-Store 会注入 $arguments
+const inArg = typeof $arguments !== "undefined" ? $arguments : {};
 
-const bl = inArg.bl || false,
-  blgd = inArg.blgd || false,
-  addflag = inArg.flag || false,
-  nm = inArg.nm || false;
+// ===== 默认参数（你要“以后不用改”，所以默认就开到你想要的效果） =====
+const nm = inArg.nm !== undefined ? !!inArg.nm : true;          // 未匹配也保留
+const addflag = inArg.flag !== undefined ? !!inArg.flag : true; // 默认加国旗
+const keepRatio = inArg.bl !== undefined ? !!inArg.bl : true;   // 默认保留倍率
+const keepTags = inArg.blgd !== undefined ? !!inArg.blgd : true;// 默认保留 IPLC/IEPL/家宽/专线/UDP/GPT 等标签
 
-const FGF = inArg.fgf == undefined ? " " : decodeURI(inArg.fgf),
-  XHFGF = inArg.sn == undefined ? " " : decodeURI(inArg.sn),
-  FNAME = inArg.name == undefined ? "" : decodeURI(inArg.name),
-  nameMap = {
-    cn: "cn",
-    zh: "cn",
-    us: "us",
-    en: "us",
-    quan: "quan",
-    gq: "gq",
-    flag: "gq",
-  },
-  inname = nameMap[inArg.in] || "",
-  outputName = nameMap[inArg.out] || "";
+// 分隔符
+const SEP = " | "; // 固定用你喜欢的样式
+const FNAME = inArg.name ? decodeURI(inArg.name) : "";
+const nf = !!inArg.nf; // name= 前缀放最前
 
-// prettier-ignore
-const FG = ['🇭🇰','🇲🇴','🇹🇼','🇯🇵','🇰🇷','🇸🇬','🇺🇸','🇬🇧','🇫🇷','🇩🇪','🇦🇺','🇦🇪','🇦🇫','🇦🇱','🇩🇿','🇦🇴','🇦🇷','🇦🇲','🇦🇹','🇦🇿','🇧🇭','🇧🇩','🇧🇾','🇧🇪','🇧🇿','🇧🇯','🇧🇹','🇧🇴','🇧🇦','🇧🇼','🇧🇷','🇻🇬','🇧🇳','🇧🇬','🇧🇫','🇧🇮','🇰🇭','🇨🇲','🇨🇦','🇨🇻','🇰🇾','🇨🇫','🇹🇩','🇨🇱','🇨🇴','🇰🇲','🇨🇬','🇨🇩','🇨🇷','🇭🇷','🇨🇾','🇨🇿','🇩🇰','🇩🇯','🇩🇴','🇪🇨','🇪🇬','🇸🇻','🇬🇶','🇪🇷','🇪🇪','🇪🇹','🇫🇯','🇫🇮','🇬🇦','🇬🇲','🇬🇪','🇬🇭','🇬🇷','🇬🇱','🇬🇹','🇬🇳','🇬🇾','🇭🇹','🇭🇳','🇭🇺','🇮🇸','🇮🇳','🇮🇩','🇮🇷','🇮🇶','🇮🇪','🇮🇲','🇮🇱','🇮🇹','🇨🇮','🇯🇲','🇯🇴','🇰🇿','🇰🇪','🇰🇼','🇰🇬','🇱🇦','🇱🇻','🇱🇧','🇱🇸','🇱🇷','🇱🇾','🇱🇹','🇱🇺','🇲🇰','🇲🇬','🇲🇼','🇲🇾','🇲🇻','🇲🇱','🇲🇹','🇲🇷','🇲🇺','🇲🇽','🇲🇩','🇲🇨','🇲🇳','🇲🇪','🇲🇦','🇲🇿','🇲🇲','🇳🇦','🇳🇵','🇳🇱','🇳🇿','🇳🇮','🇳🇪','🇳🇬','🇰🇵','🇳🇴','🇴🇲','🇵🇰','🇵🇦','🇵🇾','🇵🇪','🇵🇭','🇵🇹','🇵🇷','🇶🇦','🇷🇴','🇷🇺','🇷🇼','🇸🇲','🇸🇦','🇸🇳','🇷🇸','🇸🇱','🇸🇰','🇸🇮','🇸🇴','🇿🇦','🇪🇸','🇱🇰','🇸🇩','🇸🇷','🇸🇿','🇸🇪','🇨🇭','🇸🇾','🇹🇯','🇹🇿','🇹🇭','🇹🇬','🇹🇴','🇹🇹','🇹🇳','🇹🇷','🇹🇲','🇻🇮','🇺🇬','🇺🇦','🇺🇾','🇺🇿','🇻🇪','🇻🇳','🇾🇪','🇿🇲','🇿🇼','🇦🇩','🇷🇪','🇵🇱','🇬🇺','🇻🇦','🇱🇮','🇨🇼','🇸🇨','🇦🇶','🇬🇮','🇨🇺','🇫🇴','🇦🇽','🇧🇲','🇹🇱']
-// prettier-ignore
-const EN = ['HK','MO','TW','JP','KR','SG','US','GB','FR','DE','AU','AE','AF','AL','DZ','AO','AR','AM','AT','AZ','BH','BD','BY','BE','BZ','BJ','BT','BO','BA','BW','BR','VG','BN','BG','BF','BI','KH','CM','CA','CV','KY','CF','TD','CL','CO','KM','CG','CD','CR','HR','CY','CZ','DK','DJ','DO','EC','EG','SV','GQ','ER','EE','ET','FJ','FI','GA','GM','GE','GH','GR','GL','GT','GN','GY','HT','HN','HU','IS','IN','ID','IR','IQ','IE','IM','IL','IT','CI','JM','JO','KZ','KE','KW','KG','LA','LV','LB','LS','LR','LY','LT','LU','MK','MG','MW','MY','MV','ML','MT','MR','MU','MX','MD','MC','MN','ME','MA','MZ','MM','NA','NP','NL','NZ','NI','NE','NG','KP','NO','OM','PK','PA','PY','PE','PH','PT','PR','QA','RO','RU','RW','SM','SA','SN','RS','SL','SK','SI','SO','ZA','ES','LK','SD','SR','SZ','SE','CH','SY','TJ','TZ','TH','TG','TO','TT','TN','TR','TM','VI','UG','UA','UY','UZ','VE','VN','YE','ZM','ZW','AD','RE','PL','GU','VA','LI','CW','SC','AQ','GI','CU','FO','AX','BM','TL'];
-// prettier-ignore
-const ZH = ['香港','澳门','台湾','日本','韩国','新加坡','美国','英国','法国','德国','澳大利亚','阿联酋','阿富汗','阿尔巴尼亚','阿尔及利亚','安哥拉','阿根廷','亚美尼亚','奥地利','阿塞拜疆','巴林','孟加拉国','白俄罗斯','比利时','伯利兹','贝宁','不丹','玻利维亚','波斯尼亚和黑塞哥维那','博茨瓦纳','巴西','英属维京群岛','文莱','保加利亚','布基纳法索','布隆迪','柬埔寨','喀麦隆','加拿大','佛得角','开曼群岛','中非共和国','乍得','智利','哥伦比亚','科摩罗','刚果(布)','刚果(金)','哥斯达黎加','克罗地亚','塞浦路斯','捷克','丹麦','吉布提','多米尼加共和国','厄瓜多尔','埃及','萨尔瓦多','赤道几内亚','厄立特里亚','爱沙尼亚','埃塞俄比亚','斐济','芬兰','加蓬','冈比亚','格鲁吉亚','加纳','希腊','格陵兰','危地马拉','几内亚','圭亚那','海地','洪都拉斯','匈牙利','冰岛','印度','印尼','伊朗','伊拉克','爱尔兰','马恩岛','以色列','意大利','科特迪瓦','牙买加','约旦','哈萨克斯坦','肯尼亚','科威特','吉尔吉斯斯坦','老挝','拉脱维亚','黎巴嫩','莱索托','利比里亚','利比亚','立陶宛','卢森堡','马其顿','马达加斯加','马拉维','马来','马尔代夫','马里','马耳他','毛利塔尼亚','毛里求斯','墨西哥','摩尔多瓦','摩纳哥','蒙古','黑山共和国','摩洛哥','莫桑比克','缅甸','纳米比亚','尼泊尔','荷兰','新西兰','尼加拉瓜','尼日尔','尼日利亚','朝鲜','挪威','阿曼','巴基斯坦','巴拿马','巴拉圭','秘鲁','菲律宾','葡萄牙','波多黎各','卡塔尔','罗马尼亚','俄罗斯','卢旺达','圣马力诺','沙特阿拉伯','塞内加尔','塞尔维亚','塞拉利昂','斯洛伐克','斯洛文尼亚','索马里','南非','西班牙','斯里兰卡','苏丹','苏里南','斯威士兰','瑞典','瑞士','叙利亚','塔吉克斯坦','坦桑尼亚','泰国','多哥','汤加','特立尼达和多巴哥','突尼斯','土耳其','土库曼斯坦','美属维尔京群岛','乌干达','乌克兰','乌拉圭','乌兹别克斯坦','委内瑞拉','越南','也门','赞比亚','津巴布韦','安道尔','留尼汪','波兰','关岛','梵蒂冈','列支敦士登','库拉索','塞舌尔','南极','直布罗陀','古巴','法罗群岛','奥兰群岛','百慕达','东帝汶'];
-// prettier-ignore
-const QC = ['Hong Kong','Macao','Taiwan','Japan','Korea','Singapore','United States','United Kingdom','France','Germany','Australia','Dubai','Afghanistan','Albania','Algeria','Angola','Argentina','Armenia','Austria','Azerbaijan','Bahrain','Bangladesh','Belarus','Belgium','Belize','Benin','Bhutan','Bolivia','Bosnia and Herzegovina','Botswana','Brazil','British Virgin Islands','Brunei','Bulgaria','Burkina-faso','Burundi','Cambodia','Cameroon','Canada','CapeVerde','CaymanIslands','Central African Republic','Chad','Chile','Colombia','Comoros','Congo-Brazzaville','Congo-Kinshasa','CostaRica','Croatia','Cyprus','Czech Republic','Denmark','Djibouti','Dominican Republic','Ecuador','Egypt','EISalvador','Equatorial Guinea','Eritrea','Estonia','Ethiopia','Fiji','Finland','Gabon','Gambia','Georgia','Ghana','Greece','Greenland','Guatemala','Guinea','Guyana','Haiti','Honduras','Hungary','Iceland','India','Indonesia','Iran','Iraq','Ireland','Isle of Man','Israel','Italy','Ivory Coast','Jamaica','Jordan','Kazakstan','Kenya','Kuwait','Kyrgyzstan','Laos','Latvia','Lebanon','Lesotho','Liberia','Libya','Lithuania','Luxembourg','Macedonia','Madagascar','Malawi','Malaysia','Maldives','Mali','Malta','Mauritania','Mauritius','Mexico','Moldova','Monaco','Mongolia','Montenegro','Morocco','Mozambique','Myanmar(Burma)','Namibia','Nepal','Netherlands','New Zealand','Nicaragua','Niger','Nigeria','NorthKorea','Norway','Oman','Pakistan','Panama','Paraguay','Peru','Philippines','Portugal','PuertoRico','Qatar','Romania','Russia','Rwanda','SanMarino','SaudiArabia','Senegal','Serbia','SierraLeone','Slovakia','Slovenia','Somalia','SouthAfrica','Spain','SriLanka','Sudan','Suriname','Swaziland','Sweden','Switzerland','Syria','Tajikstan','Tanzania','Thailand','Togo','Tonga','TrinidadandTobago','Tunisia','Turkey','Turkmenistan','U.S.Virgin Islands','Uganda','Ukraine','Uruguay','Uzbekistan','Venezuela','Vietnam','Yemen','Zambia','Zimbabwe','Andorra','Reunion','Poland','Guam','Vatican','Liechtensteins','Curacao','Seychelles','Antarctica','Gibraltar','Cuba','Faroe Islands','Ahvenanmaa','Bermuda','Timor-Leste'];
+// ===== 国家识别规则（尽量覆盖 + 避免误判：缩写用 \b 边界） =====
+// 你以后真遇到“新国家”，只要机场名字里带国家/城市/缩写，这里大概率就能识别；
+// 如果机场名字完全不写国家，那任何脚本都没法凭空猜。
+const COUNTRY = [
+  // 常用优先
+  { re: /(香港|Hong\s?Kong|\bHK\b|HKG|🇭🇰)/i, name: "香港", flag: "🇭🇰" },
+  { re: /(澳门|Macao|\bMO\b|MAC|🇲🇴)/i, name: "澳门", flag: "🇲🇴" },
+  { re: /(台湾|Taiwan|\bTW\b|TPE|Taipei|新北|台北|高雄|🇹🇼|🇨🇳.*台湾|台湾.*🇨🇳)/i, name: "台湾", flag: "🇹🇼" },
+  { re: /(日本|Japan|\bJP\b|Tokyo|东京|Osaka|大阪|Nagoya|名古屋|Sapporo|札幌|Fukuoka|福冈|🇯🇵)/i, name: "日本", flag: "🇯🇵" },
+  { re: /(新加坡|Singapore|\bSG\b|SGP|狮城|🇸🇬)/i, name: "新加坡", flag: "🇸🇬" },
+  { re: /(美国|United\s?States|\bUS\b|USA|Los\s?Angeles|\bLA\b|San\s?Jose|SJ|New\s?York|NY|Dallas|D.C|Washington|硅谷|西雅图|芝加哥|纽约|洛杉矶|🇺🇸)/i, name: "美国", flag: "🇺🇸" },
+  { re: /(韩国|Korea|\bKR\b|Seoul|首尔|春川|釜山|🇰🇷)/i, name: "韩国", flag: "🇰🇷" },
 
-function getList(arg) {
-  switch (arg) {
-    case "us": return EN;
-    case "gq": return FG;
-    case "quan": return QC;
-    default: return ZH;
-  }
+  // 常见扩展（流媒体/机场常出现）
+  { re: /(英国|United\s?Kingdom|\bUK\b|London|伦敦|🇬🇧)/i, name: "英国", flag: "🇬🇧" },
+  { re: /(德国|Germany|\bDE\b|Frankfurt|法兰克福|🇩🇪)/i, name: "德国", flag: "🇩🇪" },
+  { re: /(法国|France|\bFR\b|Paris|巴黎|🇫🇷)/i, name: "法国", flag: "🇫🇷" },
+  { re: /(澳大利亚|Australia|\bAU\b|Sydney|悉尼|Melbourne|墨尔本|🇦🇺)/i, name: "澳大利亚", flag: "🇦🇺" },
+  { re: /(阿联酋|Dubai|UAE|\bAE\b|Abu\s?Dhabi|迪拜|🇦🇪)/i, name: "阿联酋", flag: "🇦🇪" },
+  { re: /(土耳其|Turkey|\bTR\b|Istanbul|伊斯坦布尔|🇹🇷)/i, name: "土耳其", flag: "🇹🇷" },
+  { re: /(印度|India|\bIN\b|Mumbai|孟买|Delhi|德里|🇮🇳)/i, name: "印度", flag: "🇮🇳" },
+  { re: /(加拿大|Canada|\bCA\b|Toronto|多伦多|Vancouver|温哥华|Montreal|蒙特利尔|🇨🇦)/i, name: "加拿大", flag: "🇨🇦" },
+  { re: /(荷兰|Netherlands|\bNL\b|Amsterdam|阿姆斯特丹|🇳🇱)/i, name: "荷兰", flag: "🇳🇱" },
+  { re: /(瑞士|Switzerland|\bCH\b|Zurich|苏黎世|🇨🇭)/i, name: "瑞士", flag: "🇨🇭" },
+  { re: /(西班牙|Spain|\bES\b|Madrid|马德里|Barcelona|巴塞罗那|🇪🇸)/i, name: "西班牙", flag: "🇪🇸" },
+  { re: /(意大利|Italy|\bIT\b|Milan|米兰|Rome|罗马|🇮🇹)/i, name: "意大利", flag: "🇮🇹" },
+
+  // 东南亚常见
+  { re: /(马来西亚|Malaysia|\bMY\b|Kuala\s?Lumpur|吉隆坡|🇲🇾)/i, name: "马来西亚", flag: "🇲🇾" },
+  { re: /(泰国|Thailand|\bTH\b|Bangkok|曼谷|🇹🇭)/i, name: "泰国", flag: "🇹🇭" },
+  { re: /(越南|Vietnam|\bVN\b|Hanoi|河内|HCM|胡志明|🇻🇳)/i, name: "越南", flag: "🇻🇳" },
+  { re: /(印尼|Indonesia|\bID\b|Jakarta|雅加达|🇮🇩)/i, name: "印尼", flag: "🇮🇩" },
+  { re: /(菲律宾|Philippines|\bPH\b|Manila|马尼拉|🇵🇭)/i, name: "菲律宾", flag: "🇵🇭" },
+
+  // 兜底：俄罗斯
+  { re: /(俄罗斯|Russia|\bRU\b|Moscow|莫斯科|🇷🇺)/i, name: "俄罗斯", flag: "🇷🇺" },
+];
+
+// ===== 标签保留（你机场那种“高速/专线/推荐/运营商/AWS/IPLC/IEPL/家宽/UDP/GPT”等）=====
+const TAG_REGEX = keepTags
+  ? /(IPLC|IEPL|专线|高速|推荐|家宽|商宽|游戏|Game|AWS|CF|Cloudflare|移动|联通|电信|BGP|CN2|GIA|CMI|CU|CT|CM|UDP|XUDP|QUIC|HY2|Hysteria2|TUIC|REALITY|GPT)/ig
+  : null;
+
+// ===== 倍率提取（尽量原样保留）=====
+// 支持：0.1倍 / 2倍 / 2x / x2 / 2× / ˣ² / 0.1X 等
+function pickRatio(name) {
+  if (!keepRatio) return "";
+  const m =
+    name.match(/(\d+(?:\.\d+)?\s*(?:倍|x|X|×))/) ||
+    name.match(/(?:x|X|×)\s*(\d+(?:\.\d+)?)/) ||
+    name.match(/ˣ[²³⁴⁵⁶⁷⁸⁹]|ˣ¹⁰|ˣ²⁰|ˣ³⁰|ˣ⁴⁰|ˣ⁵⁰/);
+  if (!m) return "";
+  // 统一一些写法：如果是 x2 这种，尽量变成 2×；如果原来就是“0.1倍”就不动
+  const raw = m[0].replace(/\s+/g, "");
+  if (/^(x|X|×)\d/.test(raw)) return raw.replace(/^(x|X)/, "") + "×";
+  if (/^\d+(\.\d+)?(x|X)$/.test(raw)) return raw.replace(/(x|X)$/, "×");
+  return raw;
 }
 
-const RATE_RE = /((\d{1,3}\.)?\d+)\s*(倍|x|X|×)/;
+// ===== 序号提取：优先保留原名末尾的 01/02/…（不做全局重排）=====
+function pickIndex(name) {
+  // 常见："... 01" 或 "...-01" 或 "..._01" 或 "...01"
+  const m = name.match(/(?:\s|-|_)?(\d{2})(?!\d)(?:\s*$)/);
+  if (m) return m[1];
+  // 有些是 1/2/3（单数字）也补 0
+  const m2 = name.match(/(?:\s|-|_)?(\d)(?!\d)(?:\s*$)/);
+  if (m2) return "0" + m2[1];
+  return "";
+}
 
-// prettier-ignore
-function jxh(e) { const n = e.reduce((e, n) => { const t = e.find((e) => e.name === n.name); if (t) { t.count++; t.items.push({ ...n, name: `${n.name}${XHFGF}${t.count.toString().padStart(2, "0")}`, }); } else { e.push({ name: n.name, count: 1, items: [{ ...n, name: `${n.name}${XHFGF}01` }], }); } return e; }, []);const t=(typeof Array.prototype.flatMap==='function'?n.flatMap((e) => e.items):n.reduce((acc, e) => acc.concat(e.items),[])); e.splice(0, e.length, ...t); return e;}
+// ===== 清理多余符号 =====
+function tidy(s) {
+  return (s || "")
+    .replace(/\s+/g, " ")
+    .replace(/\s*\|\s*/g, " | ")
+    .trim();
+}
 
-function operator(proxies) {
-  const Allmap = {};
-  const outList = getList(outputName);
+// ===== 去掉已有国旗（避免重复），但最终会按识别结果再加 =====
+function stripFlags(s) {
+  return s.replace(/[\u{1F1E6}-\u{1F1FF}]{2}/gu, "").trim();
+}
 
-  let inputList;
-  if (inname !== "") inputList = [getList(inname)];
-  else inputList = [ZH, FG, QC, EN];
+// ===== 识别国家（返回 {name, flag} 或 null）=====
+function detectCountry(name) {
+  for (const c of COUNTRY) {
+    if (c.re.test(name)) return { name: c.name, flag: c.flag };
+  }
+  return null;
+}
 
-  inputList.forEach((arr) => {
-    arr.forEach((value, valueIndex) => {
-      Allmap[value] = outList[valueIndex];
-    });
-  });
+// ===== 保留标签串（按原名提取）=====
+function pickTags(name) {
+  if (!TAG_REGEX) return "";
+  const ms = name.match(TAG_REGEX);
+  if (!ms || !ms.length) return "";
+  // 去重保持顺序
+  const out = [];
+  for (const t of ms) {
+    const k = t.toUpperCase();
+    if (!out.map(x => x.toUpperCase()).includes(k)) out.push(t);
+  }
+  // 你机场常见是“电信联通移动推荐/高速专线”等，本脚本不强制顺序，保留原出现顺序
+  return out.join("");
+}
 
-  const AMK = Object.entries(Allmap);
+// ===== 构造最终名字 =====
+function buildName(oldName) {
+  let name = tidy(oldName);
+  const raw = name;
 
-  proxies.forEach((e) => {
-    const originalName = e.name || "";
+  // 先剥离国旗（最终统一由识别结果决定是否加）
+  name = stripFlags(name);
 
-    // 国家匹配
-    const findKey = AMK.find(([key]) => originalName.includes(key));
+  const info = detectCountry(name);
 
-    // 保留机场“| 后缀”
-    const suffix = (() => {
-      const idx = originalName.indexOf("|");
-      if (idx !== -1) return originalName.slice(idx).trim();
-      return "";
-    })();
+  const idx = pickIndex(name);
+  const ratio = pickRatio(name);
+  const tags = pickTags(name);
 
-    // 倍率提取：0.1倍 / 2倍 / 3x ...
-    let rateKeep = "";
-    if (bl) {
-      const m = originalName.match(RATE_RE);
-      if (m && m[1]) rateKeep = `${m[1]}倍`;
-    }
+  // 描述：把国家相关词、倍率、末尾序号、国旗都尽量剔掉，剩下做描述
+  let desc = name;
 
-    if (findKey?.[1]) {
-      const country = findKey[1];
+  if (info) {
+    desc = desc.replace(info.name, ""); // 去掉中文国家名
+  }
+  // 去掉常见英文国家/缩写/城市（只做“轻剔除”，避免剔太狠）
+  desc = desc
+    .replace(/\b(HK|TW|JP|SG|US|UK|KR|TR|AE|AU|CA|NL|DE|FR|IT|ES|RU|IN|ID|VN|TH|MY|PH)\b/gi, "")
+    .replace(/Hong\s?Kong|Taiwan|Japan|Singapore|United\s?States|United\s?Kingdom|Korea|Turkey|Dubai|UAE|Australia|Canada|Netherlands|Germany|France|Italy|Spain|Russia|India|Indonesia|Vietnam|Thailand|Malaysia|Philippines/gi, "");
 
-      // 国旗
-      let flagStr = "";
-      if (addflag) {
-        const index = outList.indexOf(country);
-        if (index !== -1) flagStr = FG[index];
-      }
+  // 去倍率
+  if (ratio) {
+    const r = ratio.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    desc = desc.replace(new RegExp(r, "g"), "");
+  }
+  // 去掉末尾序号
+  if (idx) {
+    desc = desc.replace(new RegExp(`(?:\\s|-|_)?${idx}(?:\\s*$)`), "");
+  }
 
-      // 拼接：🇺🇸 美国-0.1倍 | 高速专线推荐
-      const head = [flagStr, FNAME, country].filter(Boolean).join(FGF);
-      const ratePart = rateKeep ? `-${rateKeep}` : "";
-      e.name = head + ratePart + (suffix ? ` ${suffix}` : "");
+  // 清理分隔符残留
+  desc = tidy(desc).replace(/^\||\|$/g, "").trim();
 
+  // 如果标签存在但描述里没留下“高速/专线/推荐”等，也把标签拼回描述（避免丢）
+  // tags 是连着的字符串，比如 "高速专线推荐"，这里更自然的放到描述里
+  if (tags && !desc.includes(tags)) {
+    // 如果 desc 为空，就直接用 tags
+    desc = desc ? `${desc}` : `${tags}`;
+  }
+
+  // 如果描述最后还是空：用原名兜底（避免输出怪名字）
+  if (!desc) desc = tidy(stripFlags(raw));
+
+  // 组装“地区名”：你喜欢“日本东京”这种效果，脚本不会强行只留“日本”
+  // 如果原名里有“东京/大阪/新加坡/AWS新加坡”等，desc 会保留，所以地区这里用“国家名”为主
+  // ——你要的效果是：🇯🇵日本东京01 | 高速专线推荐
+  // 所以：地区 = 国家名 + （如果原名里有城市关键词，优先从原名里抓一个）
+  let city = "";
+  if (info) {
+    const cityMatch =
+      raw.match(/(东京|大阪|名古屋|札幌|福冈|首尔|釜山|新北|台北|高雄|洛杉矶|圣何塞|纽约|西雅图|芝加哥|伦敦|法兰克福|巴黎|悉尼|墨尔本|迪拜|多伦多|温哥华|阿姆斯特丹|莫斯科|曼谷|河内|雅加达|马尼拉)/);
+    if (cityMatch) city = cityMatch[1];
+  }
+
+  let region = info ? `${info.name}${city}` : "";
+
+  // 倍率拼接样式：像你截图 “美国01-0.1倍 | …”
+  const ratioPart = ratio ? `-${ratio}` : "";
+
+  // 最终 name 前缀
+  let prefix = "";
+  if (FNAME) {
+    prefix = nf ? `${FNAME}` : "";
+  }
+
+  // 国旗：如果识别到国家才加；识别不到不乱加
+  const flag = addflag && info ? info.flag : "";
+
+  // 组装主标题（左侧）
+  let left;
+  if (info) {
+    // 国家存在：🇯🇵日本东京01-0.1倍
+    left = `${flag}${region}${idx ? idx : ""}${ratioPart}`;
+  } else {
+    // 没匹配到国家：保留原名（不隐藏）
+    left = tidy(stripFlags(raw));
+  }
+
+  // 拼接描述（右侧）
+  let finalName = info ? `${left}${SEP}${desc}` : left;
+
+  // 前缀 name=（你不用也行）
+  if (FNAME && !nf) finalName = `${FNAME} ${finalName}`;
+  if (FNAME && nf) finalName = `${prefix} ${finalName}`;
+
+  return tidy(finalName);
+}
+
+// ===== 保证名字唯一（Clash 系需要唯一，否则会报错/覆盖）=====
+function ensureUnique(list) {
+  const seen = new Map();
+  for (const p of list) {
+    const n = p.name;
+    const c = seen.get(n) || 0;
+    if (c === 0) {
+      seen.set(n, 1);
     } else {
-      // 未匹配国家：nm=true 保留原名；否则丢弃
-      if (nm) e.name = (FNAME ? (FNAME + FGF) : "") + originalName;
-      else e.name = null;
+      seen.set(n, c + 1);
+      p.name = `${n}#${c + 1}`;
     }
-  });
+  }
+  return list;
+}
 
-  proxies = proxies.filter((e) => e.name !== null);
+// ===== Sub-Store 入口：operator(proxies) =====
+function operator(proxies) {
+  if (!Array.isArray(proxies)) return proxies;
 
-  // 序号：01/02/03
-  jxh(proxies);
-
-  return proxies;
+  for (const p of proxies) {
+    if (!p || !p.name) continue;
+    const newName = buildName(p.name);
+    if (newName) p.name = newName;
+    // 不动其它字段（type / udp / reality / flow / etc），保证协议显示由客户端自动展示
+  }
+  return ensureUnique(proxies);
 }
