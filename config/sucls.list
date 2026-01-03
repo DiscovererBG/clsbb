@@ -1,32 +1,43 @@
 /**
- * Sub-Store rename.js（极致版 / 长期使用）
- * 输出风格：🇺🇸美国洛杉矶01-0.1倍 | 电信联通移动推荐 高速专线
+ * Sub-Store rename.js（终极长期版｜国旗修复版）
  *
- * ✅ 国旗识别（支持新国家自动适配：只要机场名字里带国旗）
- * ✅ ISO 两位码识别（US/JP/SG...）
- * ✅ 中英文国家名/常见城市识别
- * ✅ 序号不重排：只取原名末尾 01/02...
- * ✅ 倍率保留：0.1倍/2×/x2/ˣ²...
- * ✅ 标签保留：高速/专线/推荐/AWS/IPLC/IEPL/家宽/UDP/GPT...
+ * 统一输出：
+ *   🇯🇵日本东京01-0.1倍 | 高速 专线 推荐 电信 联通 移动 IPLC ...
  *
- * Sub-Store 环境：提供 $arguments，入口函数 operator(proxies)
+ * ✅ 修复点：
+ * - 国旗识别改为“最兼容”正则（避免 Sub-Store 运行环境不支持 \u{...}）
+ * - 优先保留原名国旗（机场自带国旗绝不丢）
+ *
+ * ✅ 其它能力：
+ * - #flag&bl&blgd&nm 这种参数写法可用（只写参数名也算开启）
+ * - 不重排序号：只取原名末尾 01/02/1/2 -> 两位
+ * - 倍率统一到左侧：0.1倍/2x/x2/2×/ˣ²...
+ * - 标签保留：高速/专线/推荐/运营商/IPLC/IEPL/UDP/GPT/CF/AWS...
+ * - 不改其它字段：让客户端自动显示协议(vless/vmess/hy2/udp...)
  */
 
 const inArg = typeof $arguments !== "undefined" ? $arguments : {};
 
-// ===== 默认“你要的效果”全部开启 =====
-const nm = inArg.nm !== undefined ? !!inArg.nm : true;          // 未匹配也保留
-const addflag = inArg.flag !== undefined ? !!inArg.flag : true; // 默认加国旗（识别到才加）
-const keepRatio = inArg.bl !== undefined ? !!inArg.bl : true;   // 默认保留倍率
-const keepTags = inArg.blgd !== undefined ? !!inArg.blgd : true;// 默认保留标签
+function isOn(v, defaultVal = true) {
+  if (v === undefined) return defaultVal;
+  const s = String(v).trim().toLowerCase();
+  if (s === "" || s === "1" || s === "true" || s === "on" || s === "yes") return true;
+  if (s === "0" || s === "false" || s === "off" || s === "no") return false;
+  return true;
+}
+
+const nm = isOn(inArg.nm, true);
+const addflag = isOn(inArg.flag, true);
+const keepRatio = isOn(inArg.bl, true);
+const keepTags = isOn(inArg.blgd, true);
+
 const SEP = typeof inArg.sep === "string" ? decodeURI(inArg.sep) : " | ";
 const FNAME = inArg.name ? decodeURI(inArg.name) : "";
-const nf = !!inArg.nf;
+const nf = isOn(inArg.nf, false);
 
-// ===== ISO 两位国家码 -> 中文名（覆盖常用+流媒体常见）=====
-// 极致版不把 200+ 全塞进来（太长），但：
-// - 你机场出现的新国家：如果带国旗✅自动识别
-// - 如果只写 ISO 两位码（比如 CA）：不在表里就显示“CA”，也不会丢
+// ------------------------
+// 国家映射（常用）
+// ------------------------
 const ISO2_ZH = {
   HK: "香港", MO: "澳门", TW: "台湾", JP: "日本", KR: "韩国", SG: "新加坡", US: "美国",
   GB: "英国", UK: "英国", DE: "德国", FR: "法国", IT: "意大利", ES: "西班牙", NL: "荷兰",
@@ -35,11 +46,9 @@ const ISO2_ZH = {
   RO: "罗马尼亚", BG: "保加利亚", RU: "俄罗斯", UA: "乌克兰",
   TR: "土耳其", AE: "阿联酋", SA: "沙特", IL: "以色列", QA: "卡塔尔", BH: "巴林", OM: "阿曼",
   IN: "印度", ID: "印尼", VN: "越南", TH: "泰国", MY: "马来西亚", PH: "菲律宾",
-  AU: "澳大利亚", NZ: "新西兰", CA: "加拿大", MX: "墨西哥", BR: "巴西", AR: "阿根廷", CL: "智利",
-  ZA: "南非", EG: "埃及", KE: "肯尼亚",
+  AU: "澳大利亚", NZ: "新西兰", CA: "加拿大", MX: "墨西哥", BR: "巴西",
 };
 
-// ===== 常见英文国家名 -> ISO2（用于从英文全称识别）=====
 const ENNAME_ISO2 = [
   [/hong\s*kong/i, "HK"],
   [/macao|macau/i, "MO"],
@@ -51,57 +60,39 @@ const ENNAME_ISO2 = [
   [/united\s*kingdom|great\s*britain|england|uk\b/i, "GB"],
   [/germany/i, "DE"],
   [/france/i, "FR"],
-  [/italy/i, "IT"],
-  [/spain/i, "ES"],
-  [/netherlands|holland/i, "NL"],
-  [/switzerland/i, "CH"],
   [/russia/i, "RU"],
   [/turkey/i, "TR"],
   [/united\s*arab\s*emirates|uae\b|dubai/i, "AE"],
   [/india/i, "IN"],
-  [/indonesia/i, "ID"],
-  [/vietnam/i, "VN"],
-  [/thailand/i, "TH"],
-  [/malaysia/i, "MY"],
-  [/philippines/i, "PH"],
   [/australia/i, "AU"],
-  [/new\s*zealand/i, "NZ"],
   [/canada/i, "CA"],
 ];
 
-// ===== 城市/线路关键词（用于“国家+城市”拼接）=====
 const CITY_KEYWORDS = [
-  // JP
-  "东京","大阪","名古屋","札幌","福冈","冲绳",
-  // TW
-  "台北","新北","桃园","台中","高雄",
-  // HK
-  "中环","九龙","沙田",
-  // SG
-  "新加坡",
-  // US
-  "洛杉矶","圣何塞","纽约","西雅图","芝加哥","达拉斯","华盛顿","硅谷","波特兰",
-  "Los Angeles","San Jose","New York","Seattle","Chicago","Dallas","Washington","Silicon Valley","Portland",
-  // EU
-  "伦敦","法兰克福","巴黎","阿姆斯特丹","苏黎世","马德里","米兰","罗马",
-  "London","Frankfurt","Paris","Amsterdam","Zurich","Madrid","Milan","Rome",
-  // ME
-  "迪拜","阿布扎比","多哈","利雅得",
-  "Dubai","Abu Dhabi","Doha","Riyadh",
-  // SEA
-  "曼谷","河内","胡志明","雅加达","马尼拉","吉隆坡",
-  "Bangkok","Hanoi","Ho Chi Minh","Jakarta","Manila","Kuala Lumpur",
-  // KR
-  "首尔","釜山","春川","仁川",
+  "东京","大阪","札幌","福冈",
+  "台北","新北","高雄","台中",
+  "香港","澳门","新加坡",
+  "洛杉矶","圣何塞","纽约","西雅图","芝加哥","硅谷",
+  "伦敦","法兰克福","巴黎","阿姆斯特丹","苏黎世",
+  "迪拜","多哈","利雅得",
+  "首尔","釜山","仁川","春川",
+  // 英文
+  "Los Angeles","San Jose","New York","Seattle","Chicago","Silicon Valley",
+  "London","Frankfurt","Paris","Amsterdam","Zurich",
+  "Dubai","Doha","Riyadh",
   "Seoul","Busan","Incheon","Chuncheon",
 ];
 
-// ===== 标签保留（你要的那种“高速专线推荐/运营商/协议提示”）=====
 const TAG_REGEX = keepTags
-  ? /(IPLC|IEPL|专线|高速|推荐|家宽|商宽|游戏|Game|AWS|CF|Cloudflare|移动|联通|电信|BGP|CN2|GIA|CMI|CU|CT|CM|UDP|XUDP|QUIC|HY2|Hysteria2|TUIC|REALITY|GPT|Pro|Std|Exp|Biz|Edge|Kern)/ig
+  ? /(IPLC|IEPL|专线|高速|推荐|家宽|商宽|游戏|Game|AWS|CF|Cloudflare|移动|联通|电信|BGP|CN2|GIA|CMI|CT|CU|CM|UDP|XUDP|QUIC|HY2|Hysteria2|TUIC|REALITY|GPT|Pro|Std|Exp|Biz|Edge|Kern)/ig
   : null;
 
-// ===== 工具：清理 =====
+// ------------------------
+// ✅ 国旗匹配：最兼容写法（不用 \u{...}）
+// 两个“区域指示符”组成国旗
+// ------------------------
+const FLAG_RE = /(?:\uD83C[\uDDE6-\uDDFF]){2}/g;
+
 function tidy(s) {
   return (s || "")
     .replace(/\s+/g, " ")
@@ -109,44 +100,56 @@ function tidy(s) {
     .trim();
 }
 
-// ===== 工具：去掉原名里的国旗（避免重复）=====
-function stripFlags(s) {
-  return (s || "").replace(/[\u{1F1E6}-\u{1F1FF}]{2}/gu, "").trim();
+function pickFirstFlag(s) {
+  const m = (s || "").match(FLAG_RE);
+  return m && m[0] ? m[0] : "";
 }
 
-// ===== 从国旗 emoji 得到 ISO2（Regional Indicator）=====
+function stripAllFlags(s) {
+  return (s || "").replace(FLAG_RE, "").trim();
+}
+
 function flagToISO2(flag) {
-  // flag 是两个 regional indicator 字符
-  const cps = [...flag].map(ch => ch.codePointAt(0));
-  if (cps.length !== 2) return "";
-  const A = 0x1F1E6;
-  const c1 = cps[0] - A;
-  const c2 = cps[1] - A;
-  if (c1 < 0 || c1 > 25 || c2 < 0 || c2 > 25) return "";
-  return String.fromCharCode(65 + c1) + String.fromCharCode(65 + c2);
+  // flag 是两个 surrogate pair：\uD83C[\uDDE6-\uDDFF] \uD83C[\uDDE6-\uDDFF]
+  if (!flag || flag.length < 4) return "";
+  // 取后半部分（low surrogate）区间映射 A-Z
+  const a = flag.charCodeAt(1) - 0xDDE6;
+  const b = flag.charCodeAt(3) - 0xDDE6;
+  if (a < 0 || a > 25 || b < 0 || b > 25) return "";
+  return String.fromCharCode(65 + a) + String.fromCharCode(65 + b);
 }
 
-// ===== 抓倍率：0.1倍 / 2× / x2 / ˣ² ... =====
+function iso2ToFlag(iso2) {
+  if (!/^[A-Z]{2}$/.test(iso2)) return "";
+  const A = 0xDDE6;
+  const a = iso2.charCodeAt(0) - 65;
+  const b = iso2.charCodeAt(1) - 65;
+  if (a < 0 || a > 25 || b < 0 || b > 25) return "";
+  // 组合成两个 surrogate pair
+  return "\uD83C" + String.fromCharCode(A + a) + "\uD83C" + String.fromCharCode(A + b);
+}
+
 function pickRatio(name) {
   if (!keepRatio) return "";
   const n = name || "";
-  // ˣ² 这类
+
   const sup = n.match(/ˣ[²³⁴⁵⁶⁷⁸⁹]|ˣ¹⁰|ˣ²⁰|ˣ³⁰|ˣ⁴⁰|ˣ⁵⁰/);
   if (sup) return sup[0];
 
-  // 0.1倍 / 2倍 / 2x / 2X / 2× / x2
-  const m =
-    n.match(/(\d+(?:\.\d+)?\s*(?:倍|x|X|×))/) ||
-    n.match(/(?:x|X|×)\s*(\d+(?:\.\d+)?)/);
-  if (!m) return "";
+  const m1 = n.match(/(\d+(?:\.\d+)?)(?:\s*)(倍|x|X|×)\b/);
+  if (m1) {
+    const num = m1[1];
+    const unit = m1[2];
+    if (unit === "倍") return `${num}倍`;
+    return `${num}×`;
+  }
 
-  const raw = m[0].replace(/\s+/g, "");
-  if (/^(x|X|×)\d/.test(raw)) return raw.replace(/^(x|X)/, "") + "×";
-  if (/^\d+(\.\d+)?(x|X)$/.test(raw)) return raw.replace(/(x|X)$/, "×");
-  return raw;
+  const m2 = n.match(/\b(x|X|×)\s*(\d+(?:\.\d+)?)\b/);
+  if (m2) return `${m2[2]}×`;
+
+  return "";
 }
 
-// ===== 抓末尾序号：只取原名末尾 01/02...（不全局重排）=====
 function pickIndex(name) {
   const n = name || "";
   const m = n.match(/(?:\s|-|_)?(\d{2})(?!\d)\s*$/);
@@ -156,7 +159,6 @@ function pickIndex(name) {
   return "";
 }
 
-// ===== 抓标签：保留原名里出现的关键词，去重保持顺序 =====
 function pickTags(name) {
   if (!TAG_REGEX) return "";
   const ms = (name || "").match(TAG_REGEX);
@@ -164,33 +166,38 @@ function pickTags(name) {
   const out = [];
   for (const t of ms) {
     const k = t.toUpperCase();
-    if (!out.map(x => x.toUpperCase()).includes(k)) out.push(t);
+    if (!out.some(x => x.toUpperCase() === k)) out.push(t);
   }
-  return out.join("");
+  return out.join(" ");
 }
 
-// ===== 识别国家：国旗 > ISO2 > 英文国家名 > 中文国家名/关键词 =====
+function pickCity(raw) {
+  const s = raw || "";
+  for (const k of CITY_KEYWORDS) {
+    const re = new RegExp(k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+    if (re.test(s)) return k;
+  }
+  return "";
+}
+
 function detectCountry(rawName) {
   const raw = rawName || "";
 
-  // 1) 国旗优先（自动适配新国家）
-  const flagMatch = raw.match(/[\u{1F1E6}-\u{1F1FF}]{2}/u);
-  if (flagMatch) {
-    const flag = flagMatch[0];
-    const iso2 = flagToISO2(flag);
-    const zh = ISO2_ZH[iso2] || iso2; // 不在表里就用 ISO2 显示
-    return { iso2, zh, flag };
+  // 1) 原名国旗（最稳定）
+  const rawFlag = pickFirstFlag(raw);
+  if (rawFlag) {
+    const iso2 = flagToISO2(rawFlag);
+    const zh = ISO2_ZH[iso2] || iso2 || "";
+    return { iso2, zh, flag: rawFlag, from: "flag" };
   }
 
-  // 2) ISO2：用单词边界避免误伤（比如 “us” 出现在 “asus” 里）
+  // 2) ISO2
   const iso2Match = raw.match(/\b([A-Z]{2})\b/);
   if (iso2Match) {
     const iso2 = iso2Match[1].toUpperCase();
-    if (ISO2_ZH[iso2] || iso2.length === 2) {
-      const zh = ISO2_ZH[iso2] || iso2;
-      const flag = iso2ToFlag(iso2);
-      return { iso2, zh, flag };
-    }
+    const zh = ISO2_ZH[iso2] || iso2;
+    const flag = iso2ToFlag(iso2);
+    return { iso2, zh, flag, from: "iso2" };
   }
 
   // 3) 英文国家名
@@ -198,14 +205,14 @@ function detectCountry(rawName) {
     if (re.test(raw)) {
       const zh = ISO2_ZH[iso2] || iso2;
       const flag = iso2ToFlag(iso2);
-      return { iso2, zh, flag };
+      return { iso2, zh, flag, from: "en" };
     }
   }
 
-  // 4) 中文国家名关键词（常用）
+  // 4) 中文关键词（常用）
   const cn = [
     [/香港/, "HK"], [/澳门/, "MO"], [/台湾|台北|新北|高雄|台中/, "TW"],
-    [/日本|东京|大阪|名古屋|札幌|福冈/, "JP"],
+    [/日本|东京|大阪|札幌|福冈/, "JP"],
     [/新加坡|狮城/, "SG"],
     [/美国|洛杉矶|圣何塞|纽约|西雅图|芝加哥|硅谷/, "US"],
     [/韩国|首尔|釜山|仁川|春川/, "KR"],
@@ -222,107 +229,76 @@ function detectCountry(rawName) {
     if (re.test(raw)) {
       const zh = ISO2_ZH[iso2] || iso2;
       const flag = iso2ToFlag(iso2);
-      return { iso2, zh, flag };
+      return { iso2, zh, flag, from: "zh" };
     }
   }
 
   return null;
 }
 
-// ===== ISO2 -> 国旗 emoji =====
-function iso2ToFlag(iso2) {
-  if (!/^[A-Z]{2}$/.test(iso2)) return "";
-  const A = 0x1F1E6;
-  const c1 = iso2.charCodeAt(0) - 65;
-  const c2 = iso2.charCodeAt(1) - 65;
-  if (c1 < 0 || c1 > 25 || c2 < 0 || c2 > 25) return "";
-  return String.fromCodePoint(A + c1) + String.fromCodePoint(A + c2);
-}
-
-// ===== 从原名里抓“城市关键词”（让你看到 日本东京 / 美国洛杉矶 这种）=====
-function pickCity(raw) {
-  const s = raw || "";
-  for (const k of CITY_KEYWORDS) {
-    const re = new RegExp(k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
-    if (re.test(s)) return k;
-  }
-  return "";
-}
-
-// ===== 构造最终名字 =====
 function buildName(oldName) {
   const raw0 = tidy(oldName);
   if (!raw0) return raw0;
 
-  // 先去掉原名国旗，避免重复叠加
-  const rawNoFlag = tidy(stripFlags(raw0));
+  // ✅ 关键：原名自带国旗，先抓出来，后面直接用（绝不会丢）
+  const originalFlag = pickFirstFlag(raw0);
 
-  const info = detectCountry(raw0); // 注意：用原始 raw0（可能含国旗/ISO2/英文）
+  // 去掉原名所有国旗（防重复堆叠）
+  const rawNoFlag = tidy(stripAllFlags(raw0));
+
+  const info = detectCountry(raw0);
   const idx = pickIndex(rawNoFlag);
   const ratio = pickRatio(rawNoFlag);
   const tags = pickTags(rawNoFlag);
 
-  // 描述：尽量保留“高速专线推荐/运营商”等，把国家/城市/倍率/末尾序号清掉
   let desc = rawNoFlag;
 
-  // 去倍率
   if (ratio) {
-    const r = ratio.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    desc = desc.replace(new RegExp(r, "g"), "");
+    const esc = ratio.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    desc = desc.replace(new RegExp(esc, "g"), "");
   }
-  // 去末尾序号
-  if (idx) {
-    desc = desc.replace(new RegExp(`(?:\\s|-|_)?${idx}(?!\\d)\\s*$`), "");
-  }
-  // 去国家相关词（轻量）
+  if (idx) desc = desc.replace(new RegExp(`(?:\\s|-|_)?${idx}(?!\\d)\\s*$`), "");
+
   if (info) {
-    if (info.zh && info.zh !== info.iso2) {
-      desc = desc.replace(new RegExp(info.zh, "g"), "");
-    }
-    if (info.iso2) {
-      desc = desc.replace(new RegExp(`\\b${info.iso2}\\b`, "g"), "");
-    }
+    if (info.zh && info.zh !== info.iso2) desc = desc.replace(new RegExp(info.zh, "g"), "");
+    if (info.iso2) desc = desc.replace(new RegExp(`\\b${info.iso2}\\b`, "g"), "");
   }
 
-  // 去常见分隔残留
   desc = tidy(desc).replace(/^\||\|$/g, "").trim();
 
-  // 如果 desc 为空，用 tags 兜底；再不行用原名兜底
-  if (!desc && tags) desc = tags;
-  if (!desc) desc = rawNoFlag;
+  if (tags) desc = tidy(desc ? `${desc} ${tags}` : tags);
 
-  // 组装左侧：🇺🇸美国洛杉矶01-0.1倍
+  // 未识别国家：不丢（nm=true），直接保留原名
   if (!info) {
-    // 未匹配：按 nm 决定
-    return nm ? (FNAME ? `${FNAME} ${rawNoFlag}` : rawNoFlag) : null;
+    const fallback = FNAME ? `${FNAME} ${rawNoFlag}` : rawNoFlag;
+    return nm ? tidy(fallback) : null;
   }
 
   const city = pickCity(raw0);
   const region = `${info.zh}${city && !String(city).includes(info.zh) ? city : ""}`;
 
-  const flag = addflag ? info.flag : "";
+  // ✅ 国旗最终策略：
+  // - 如果原名有国旗：用原来的（最符合“机场基础输出”）
+  // - 否则：用识别生成的
+  const flag = addflag ? (originalFlag || info.flag || "") : "";
+
   const ratioPart = ratio ? `-${ratio}` : "";
   const left = `${flag}${region}${idx ? idx : ""}${ratioPart}`;
 
-  let finalName = `${left}${SEP}${desc}`;
+  let finalName = `${left}${SEP}${desc || region}`;
 
-  // 前缀 name=
-  if (FNAME) {
-    finalName = nf ? `${FNAME} ${finalName}` : `${FNAME} ${finalName}`;
-  }
+  if (FNAME) finalName = nf ? `${FNAME} ${finalName}` : `${FNAME} ${finalName}`;
 
   return tidy(finalName);
 }
 
-// ===== Clash 需要 name 唯一：重复则加 #2 #3... =====
 function ensureUnique(list) {
   const seen = new Map();
   for (const p of list) {
     const n = p.name;
     const c = seen.get(n) || 0;
-    if (c === 0) {
-      seen.set(n, 1);
-    } else {
+    if (c === 0) seen.set(n, 1);
+    else {
       seen.set(n, c + 1);
       p.name = `${n}#${c + 1}`;
     }
@@ -330,23 +306,18 @@ function ensureUnique(list) {
   return list;
 }
 
-// ===== Sub-Store 入口 =====
 function operator(proxies) {
   if (!Array.isArray(proxies)) return proxies;
 
   for (const p of proxies) {
     if (!p || !p.name) continue;
-
     const newName = buildName(p.name);
     if (newName === null) {
-      // nm=false 且未匹配：丢弃
       p.name = null;
       continue;
     }
+    // 只改 name，不动其它字段（协议显示由客户端完成）
     p.name = newName;
-
-    // ✅ 绝对不改动 p 的其它字段（type / udp / network / flow / reality / sni...）
-    // 这样客户端才能自动显示你截图那种 “vless / xudp”、“hy2 / udp”
   }
 
   const out = proxies.filter(p => p && p.name);
