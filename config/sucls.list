@@ -1,34 +1,23 @@
 /**
+ * Sub-Store rename.js（Sub-Store 环境版：不使用 module.exports）
  * 目标：保持机场原生命名风格（倍率/高速/推荐/运营商等全部保留）
- * 只做：国家识别 + 统一输出格式 + 序号整理 +（可选）国旗
+ * 只做：国家识别 + 输出格式 + 序号整理 +（可选）国旗
  *
  * 推荐参数：#flag&bl&blgd&nm
- * - flag: 加国旗
- * - bl:   保留倍率（0.1倍 / 0.2x / 2× / ˣ² ...）
- * - blgd: 保留固定标签（IPLC/IEPL/专线/UDP/GPT...）
- * - nm:   没匹配到国家也不隐藏
  */
 
 const inArg = $arguments;
 
-const nx = inArg.nx || false,
-  bl = inArg.bl || false,
+const bl = inArg.bl || false,
   nf = inArg.nf || false,
-  key = inArg.key || false,
   blgd = inArg.blgd || false,
-  blpx = inArg.blpx || false,
-  blnx = inArg.blnx || false,
   numone = inArg.one || false,
-  debug = inArg.debug || false,
-  clear = inArg.clear || false,
   addflag = inArg.flag || false,
   nm = inArg.nm || false;
 
 const FGF = inArg.fgf == undefined ? " " : decodeURI(inArg.fgf),
   XHFGF = inArg.sn == undefined ? " " : decodeURI(inArg.sn),
   FNAME = inArg.name == undefined ? "" : decodeURI(inArg.name),
-  BLKEY = inArg.blkey == undefined ? "" : decodeURI(inArg.blkey),
-  blockquic = inArg.blockquic == undefined ? "" : decodeURI(inArg.blockquic),
   nameMap = {
     cn: "cn",
     zh: "cn",
@@ -46,59 +35,9 @@ const FG = ['🇭🇰','🇲🇴','🇹🇼','🇯🇵','🇰🇷','🇸🇬','�
 // prettier-ignore
 const EN = ['HK','MO','TW','JP','KR','SG','US','GB','FR','DE','AU','AE','AF','AL','DZ','AO','AR','AM','AT','AZ','BH','BD','BY','BE','BZ','BJ','BT','BO','BA','BW','BR','VG','BN','BG','BF','BI','KH','CM','CA','CV','KY','CF','TD','CL','CO','KM','CG','CD','CR','HR','CY','CZ','DK','DJ','DO','EC','EG','SV','GQ','ER','EE','ET','FJ','FI','GA','GM','GE','GH','GR','GL','GT','GN','GY','HT','HN','HU','IS','IN','ID','IR','IQ','IE','IM','IL','IT','CI','JM','JO','KZ','KE','KW','KG','LA','LV','LB','LS','LR','LY','LT','LU','MK','MG','MW','MY','MV','ML','MT','MR','MU','MX','MD','MC','MN','ME','MA','MZ','MM','NA','NP','NL','NZ','NI','NE','NG','KP','NO','OM','PK','PA','PY','PE','PH','PT','PR','QA','RO','RU','RW','SM','SA','SN','RS','SL','SK','SI','SO','ZA','ES','LK','SD','SR','SZ','SE','CH','SY','TJ','TZ','TH','TG','TO','TT','TN','TR','TM','VI','UG','UA','UY','UZ','VE','VN','YE','ZM','ZW','AD','RE','PL','GU','VA','LI','CW','SC','AQ','GI','CU','FO','AX','BM','TL'];
 // prettier-ignore
-const ZH = ['香港','澳门','台湾','日本','韩国','新加坡','美国','英国','法国','德国','澳大利亚','阿联酋','阿富汗','阿尔巴尼亚','阿尔及利亚','安哥拉','阿根廷','亚美尼亚','奥地利','阿塞拜疆','巴林','孟加拉国','白俄罗斯','比利时','伯利兹','贝宁','不丹','玻利维亚','波斯尼亚和黑塞哥维那','博茨瓦纳','巴西','英属维京群岛','文莱','保加利亚','布基纳法索','布隆迪','柬埔寨','喀麦隆','加拿大','佛得角','开曼群岛','中非共和国','乍得','智利','哥伦比亚','科摩罗','刚果(布)','刚果(金)','哥斯达黎加','克罗地亚','塞浦路斯','捷克','丹麦','吉布提','多米尼加共和国','厄瓜多尔','埃及','萨尔瓦多','赤道几内亚','厄立特里亚','爱沙尼亚','埃塞俄比亚','斐济','芬兰','加蓬','冈比亚','格鲁吉亚','加纳','希腊','格陵land','危地马拉','几内亚','圭亚那','海地','洪都拉斯','匈牙利','冰岛','印度','印尼','伊朗','伊拉克','爱尔兰','马恩岛','以色列','意大利','科特迪瓦','牙买加','约旦','哈萨克斯坦','肯尼亚','科威特','吉尔吉斯斯坦','老挝','拉脱维亚','黎巴嫩','莱索托','利比里亚','利比亚','立陶宛','卢森堡','马其顿','马达加斯加','马拉维','马来','马尔代夫','马里','马耳他','毛利塔尼亚','毛里求斯','墨西哥','摩尔多瓦','摩纳哥','蒙古','黑山共和国','摩洛哥','莫桑比克','缅甸','纳米比亚','尼泊尔','荷兰','新西兰','尼加拉瓜','尼日尔','尼日利亚','朝鲜','挪威','阿曼','巴基斯坦','巴拿马','巴拉圭','秘鲁','菲律宾','葡萄牙','波多黎各','卡塔尔','罗马尼亚','俄罗斯','卢旺达','圣马力诺','沙特阿拉伯','塞内加尔','塞尔维亚','塞拉利昂','斯洛伐克','斯洛文尼亚','索马里','南非','西班牙','斯里兰卡','苏丹','苏里南','斯威士兰','瑞典','瑞士','叙利亚','塔吉克斯坦','坦桑尼亚','泰国','多哥','汤加','特立尼达和多巴哥','突尼斯','土耳其','土库曼斯坦','美属维尔京群岛','乌干达','乌克兰','乌拉圭','乌兹别克斯坦','委内瑞拉','越南','也门','赞比亚','津巴布韦','安道尔','留尼汪','波兰','关岛','梵蒂冈','列支敦士登','库拉索','塞舌尔','南极','直布罗陀','古巴','法罗群岛','奥兰群岛','百慕达','东帝汶'];
+const ZH = ['香港','澳门','台湾','日本','韩国','新加坡','美国','英国','法国','德国','澳大利亚','阿联酋','阿富汗','阿尔巴尼亚','阿尔及利亚','安哥拉','阿根廷','亚美尼亚','奥地利','阿塞拜疆','巴林','孟加拉国','白俄罗斯','比利时','伯利兹','贝宁','不丹','玻利维亚','波斯尼亚和黑塞哥维那','博茨瓦纳','巴西','英属维京群岛','文莱','保加利亚','布基纳法索','布隆迪','柬埔寨','喀麦隆','加拿大','佛得角','开曼群岛','中非共和国','乍得','智利','哥伦比亚','科摩罗','刚果(布)','刚果(金)','哥斯达黎加','克罗地亚','塞浦路斯','捷克','丹麦','吉布提','多米尼加共和国','厄瓜多尔','埃及','萨尔瓦多','赤道几内亚','厄立特里亚','爱沙尼亚','埃塞俄比亚','斐济','芬兰','加蓬','冈比亚','格鲁吉亚','加纳','希腊','格陵兰','危地马拉','几内亚','圭亚那','海地','洪都拉斯','匈牙利','冰岛','印度','印尼','伊朗','伊拉克','爱尔兰','马恩岛','以色列','意大利','科特迪瓦','牙买加','约旦','哈萨克斯坦','肯尼亚','科威特','吉尔吉斯斯坦','老挝','拉脱维亚','黎巴嫩','莱索托','利比里亚','利比亚','立陶宛','卢森堡','马其顿','马达加斯加','马拉维','马来','马尔代夫','马里','马耳他','毛利塔尼亚','毛里求斯','墨西哥','摩尔多瓦','摩纳哥','蒙古','黑山共和国','摩洛哥','莫桑比克','缅甸','纳米比亚','尼泊尔','荷兰','新西兰','尼加拉瓜','尼日尔','尼日利亚','朝鲜','挪威','阿曼','巴基斯坦','巴拿马','巴拉圭','秘鲁','菲律宾','葡萄牙','波多黎各','卡塔尔','罗马尼亚','俄罗斯','卢旺达','圣马力诺','沙特阿拉伯','塞内加尔','塞尔维亚','塞拉利昂','斯洛伐克','斯洛文尼亚','索马里','南非','西班牙','斯里兰卡','苏丹','苏里南','斯威士兰','瑞典','瑞士','叙利亚','塔吉克斯坦','坦桑尼亚','泰国','多哥','汤加','特立尼达和多巴哥','突尼斯','土耳其','土库曼斯坦','美属维尔京群岛','乌干达','乌克兰','乌拉圭','乌兹别克斯坦','委内瑞拉','越南','也门','赞比亚','津巴布韦','安道尔','留尼汪','波兰','关岛','梵蒂冈','列支敦士登','库拉索','塞舌尔','南极','直布罗陀','古巴','法罗群岛','奥兰群岛','百慕达','东帝汶'];
 // prettier-ignore
-const QC = ['Hong Kong','Macao','Taiwan','Japan','Korea','Singapore','United States','United Kingdom','France','Germany','Australia','Dubai',/*...*/'Timor-Leste'];
-
-// 你原本的关键词替换规则保留
-const rurekey = {
-  GB: /UK/g,
-  "B-G-P": /BGP/g,
-  "Russia Moscow": /Moscow/g,
-  "Korea Chuncheon": /Chuncheon|Seoul/g,
-  "Hong Kong": /Hongkong|HONG KONG/gi,
-  "United Kingdom London": /London|Great Britain/g,
-  "Dubai United Arab Emirates": /United Arab Emirates/g,
-  "Taiwan TW 台湾 🇹🇼": /(台|Tai\s?wan|TW).*?🇨🇳|🇨🇳.*?(台|Tai\s?wan|TW)/g,
-  "United States": /USA|Los Angeles|San Jose|Silicon Valley|Michigan/g,
-  澳大利亚: /澳洲|墨尔本|悉尼|土澳|(深|沪|呼|京|广|杭)澳/g,
-  德国: /(深|沪|呼|京|广|杭)德(?!.*(I|线))|法兰克福|滬德/g,
-  香港: /(深|沪|呼|京|广|杭)港(?!.*(I|线))/g,
-  日本: /(深|沪|呼|京|广|杭|中|辽)日(?!.*(I|线))|东京|大坂/g,
-  新加坡: /狮城|(深|沪|呼|京|广|杭)新/g,
-  美国: /(深|沪|呼|京|广|杭)美|波特兰|芝加哥|哥伦布|纽约|硅谷|俄勒冈|西雅图|芝加哥/g,
-  波斯尼亚和黑塞哥维那: /波黑共和国/g,
-  印尼: /印度尼西亚|雅加达/g,
-  印度: /孟买/g,
-  阿联酋: /迪拜|阿拉伯联合酋长国/g,
-  孟加拉国: /孟加拉/g,
-  捷克: /捷克共和国/g,
-  台湾: /新台|新北|台(?!.*线)/g,
-  Taiwan: /Taipei/g,
-  韩国: /春川|韩|首尔/g,
-  Japan: /Tokyo|Osaka/g,
-  英国: /伦敦/g,
-  India: /Mumbai/g,
-  Germany: /Frankfurt/g,
-  Switzerland: /Zurich/g,
-  俄罗斯: /莫斯科/g,
-  土耳其: /伊斯坦布尔/g,
-  泰国: /泰國|曼谷/g,
-  法国: /巴黎/g,
-  G: /\d\s?GB/gi,
-  Esnc: /esnc/gi,
-};
-
-// ✅ 更“机场风格”的倍率识别（只用来“保留”，不生成）
-const RATE_RE = /((\d{1,3}\.)?\d+)\s*(倍|x|X|×)/;
-const SUPER_RE = /(高倍|ˣ²|ˣ³|ˣ⁴|ˣ⁵|ˣ¹⁰)/i;
-
-// ✅ 固定标签保留（你原 blgd 的思路，但补强）
-const TAG_RE_LIST = [
-  /IPLC/i, /IEPL/i, /专线/i, /高速/i, /推荐/i,
-  /\budp\b/i, /\bxudp\b/i, /\bhy2\b/i, /\bhysteria2\b/i,
-  /\bgpt\b/i
-];
+const QC = ['Hong Kong','Macao','Taiwan','Japan','Korea','Singapore','United States','United Kingdom','France','Germany','Australia','Dubai','Afghanistan','Albania','Algeria','Angola','Argentina','Armenia','Austria','Azerbaijan','Bahrain','Bangladesh','Belarus','Belgium','Belize','Benin','Bhutan','Bolivia','Bosnia and Herzegovina','Botswana','Brazil','British Virgin Islands','Brunei','Bulgaria','Burkina-faso','Burundi','Cambodia','Cameroon','Canada','CapeVerde','CaymanIslands','Central African Republic','Chad','Chile','Colombia','Comoros','Congo-Brazzaville','Congo-Kinshasa','CostaRica','Croatia','Cyprus','Czech Republic','Denmark','Djibouti','Dominican Republic','Ecuador','Egypt','EISalvador','Equatorial Guinea','Eritrea','Estonia','Ethiopia','Fiji','Finland','Gabon','Gambia','Georgia','Ghana','Greece','Greenland','Guatemala','Guinea','Guyana','Haiti','Honduras','Hungary','Iceland','India','Indonesia','Iran','Iraq','Ireland','Isle of Man','Israel','Italy','Ivory Coast','Jamaica','Jordan','Kazakstan','Kenya','Kuwait','Kyrgyzstan','Laos','Latvia','Lebanon','Lesotho','Liberia','Libya','Lithuania','Luxembourg','Macedonia','Madagascar','Malawi','Malaysia','Maldives','Mali','Malta','Mauritania','Mauritius','Mexico','Moldova','Monaco','Mongolia','Montenegro','Morocco','Mozambique','Myanmar(Burma)','Namibia','Nepal','Netherlands','New Zealand','Nicaragua','Niger','Nigeria','NorthKorea','Norway','Oman','Pakistan','Panama','Paraguay','Peru','Philippines','Portugal','PuertoRico','Qatar','Romania','Russia','Rwanda','SanMarino','SaudiArabia','Senegal','Serbia','SierraLeone','Slovakia','Slovenia','Somalia','SouthAfrica','Spain','SriLanka','Sudan','Suriname','Swaziland','Sweden','Switzerland','Syria','Tajikstan','Tanzania','Thailand','Togo','Tonga','TrinidadandTobago','Tunisia','Turkey','Turkmenistan','U.S.Virgin Islands','Uganda','Ukraine','Uruguay','Uzbekistan','Venezuela','Vietnam','Yemen','Zambia','Zimbabwe','Andorra','Reunion','Poland','Guam','Vatican','Liechtensteins','Curacao','Seychelles','Antarctica','Gibraltar','Cuba','Faroe Islands','Ahvenanmaa','Bermuda','Timor-Leste'];
 
 function getList(arg) {
   switch (arg) {
@@ -109,44 +48,24 @@ function getList(arg) {
   }
 }
 
+// ✅ 倍率：只做“提取保留”，不改协议字段
+const RATE_RE = /((\d{1,3}\.)?\d+)\s*(倍|x|X|×)/;
+const SUPER_RE = /(高倍|ˣ²|ˣ³|ˣ⁴|ˣ⁵|ˣ¹⁰)/i;
+
+// ✅ 固定标签保留（可选显示到名字末尾）
+const TAG_RE_LIST = [
+  /IPLC/i, /IEPL/i, /专线/i, /高速/i, /推荐/i,
+  /\budp\b/i, /\bxudp\b/i, /\bhy2\b/i, /\bhysteria2\b/i,
+  /\bgpt\b/i
+];
+
 let GetK = false, AMK = [];
-function ObjKA(i) {
-  GetK = true;
-  AMK = Object.entries(i);
-}
+function ObjKA(i) { GetK = true; AMK = Object.entries(i); }
 
-function jxh(e) {
-  const n = e.reduce((e, n) => {
-    const t = e.find((e) => e.name === n.name);
-    if (t) {
-      t.count++;
-      t.items.push({ ...n, name: `${n.name}${XHFGF}${t.count.toString().padStart(2, "0")}` });
-    } else {
-      e.push({ name: n.name, count: 1, items: [{ ...n, name: `${n.name}${XHFGF}01` }] });
-    }
-    return e;
-  }, []);
-  const t = (typeof Array.prototype.flatMap === "function"
-    ? n.flatMap((e) => e.items)
-    : n.reduce((acc, e) => acc.concat(e.items), []));
-  e.splice(0, e.length, ...t);
-  return e;
-}
-
-function oneP(e) {
-  const t = e.reduce((e, t) => {
-    const n = t.name.replace(/[^A-Za-z0-9\u00C0-\u017F\u4E00-\u9FFF]+\d+$/, "");
-    if (!e[n]) e[n] = [];
-    e[n].push(t);
-    return e;
-  }, {});
-  for (const e in t) {
-    if (t[e].length === 1 && t[e][0].name.endsWith("01")) {
-      t[e][0].name = t[e][0].name.replace(/[^.]01/, "");
-    }
-  }
-  return e;
-}
+// prettier-ignore
+function jxh(e) { const n = e.reduce((e, n) => { const t = e.find((e) => e.name === n.name); if (t) { t.count++; t.items.push({ ...n, name: `${n.name}${XHFGF}${t.count.toString().padStart(2, "0")}`, }); } else { e.push({ name: n.name, count: 1, items: [{ ...n, name: `${n.name}${XHFGF}01` }], }); } return e; }, []);const t=(typeof Array.prototype.flatMap==='function'?n.flatMap((e) => e.items):n.reduce((acc, e) => acc.concat(e.items),[])); e.splice(0, e.length, ...t); return e;}
+// prettier-ignore
+function oneP(e) { const t = e.reduce((e, t) => { const n = t.name.replace(/[^A-Za-z0-9\u00C0-\u017F\u4E00-\u9FFF]+\d+$/, ""); if (!e[n]) { e[n] = []; } e[n].push(t); return e; }, {}); for (const e in t) { if (t[e].length === 1 && t[e][0].name.endsWith("01")) { t[e][0].name= t[e][0].name.replace(/[^.]01/, "") } } return e; }
 
 function operator(pro) {
   const Allmap = {};
@@ -162,49 +81,33 @@ function operator(pro) {
     });
   });
 
-  const BLKEYS = BLKEY ? BLKEY.split("+") : "";
+  !GetK && ObjKA(Allmap);
 
   pro.forEach((e) => {
-    // 先做替换（保留你原本逻辑）
-    Object.keys(rurekey).forEach((ikey) => {
-      if (rurekey[ikey].test(e.name)) {
-        e.name = e.name.replace(rurekey[ikey], ikey);
-      }
-    });
-
-    if (blockquic == "on") e["block-quic"] = "on";
-    else if (blockquic == "off") e["block-quic"] = "off";
-    else delete e["block-quic"];
-
-    // ✅ 关键：我们不“清理后缀”，保留机场原名的描述（| 后面的东西）
     const originalName = e.name;
 
-    // 处理自定义保留关键字（你原逻辑）
-    let retainKey = "";
-    if (BLKEY) {
-      let BLKEY_REPLACE = "", re = false;
-      BLKEYS.forEach((i) => {
-        if (i.includes(">") && originalName.includes(i.split(">")[0])) {
-          if (i.split(">")[1]) { BLKEY_REPLACE = i.split(">")[1]; re = true; }
-        }
-      });
-      retainKey = re ? BLKEY_REPLACE : BLKEYS.filter((items) => originalName.includes(items));
-    }
+    // 国家匹配
+    const findKey = AMK.find(([key]) => originalName.includes(key));
 
-    // ✅ 机场风格：提取倍率（仅保留，不生成）
+    // 提取 “| 后缀” 保留机场风格
+    const suffix = (() => {
+      const idx = originalName.indexOf("|");
+      if (idx !== -1) return originalName.slice(idx).trim();
+      return "";
+    })();
+
+    // 倍率保留（默认统一成 “0.1倍” 这种机场风格）
     let rateKeep = "";
     if (bl) {
       const m = originalName.match(RATE_RE);
-      if (m && m[1]) rateKeep = `${m[1]}${m[3] === "倍" ? "倍" : "倍"}`; // 统一显示“倍”更直观（你截图是 0.1倍）
-      // 如果你不想统一，想原样 x/×：把上面这行改成 rateKeep = m[0].trim()
-    }
-    if (!rateKeep && bl && SUPER_RE.test(originalName)) {
-      // 高倍/ˣ² 这种，直接保留原样关键字即可
-      const ms = originalName.match(SUPER_RE);
-      rateKeep = ms ? ms[0] : "";
+      if (m && m[1]) rateKeep = `${m[1]}倍`;
+      if (!rateKeep && SUPER_RE.test(originalName)) {
+        const ms = originalName.match(SUPER_RE);
+        rateKeep = ms ? ms[0] : "";
+      }
     }
 
-    // ✅ 固定标签保留（blgd）
+    // 标签保留（可选）
     let tagsKeep = "";
     if (blgd) {
       for (const r of TAG_RE_LIST) {
@@ -213,53 +116,26 @@ function operator(pro) {
       }
     }
 
-    // ✅ 匹配国家：只做国家统一 + 序号，不动机场“| 后缀”
-    !GetK && ObjKA(Allmap);
-    const findKey = AMK.find(([key]) => originalName.includes(key));
-
-    let firstName = "", nNames = "";
-    if (nf) firstName = FNAME;
-    else nNames = FNAME;
-
     if (findKey?.[1]) {
       const country = findKey[1];
       let usflag = "";
+
       if (addflag) {
         const index = outList.indexOf(country);
-        if (index !== -1) {
-          usflag = FG[index];
-          usflag = usflag === "🇹🇼" ? "🇨🇳" : usflag;
-        }
+        if (index !== -1) usflag = FG[index];
       }
 
-      // ✅ 机场风格：国家 +（后续由 jxh 自动加 01/02） + 保留倍率/标签 + 保留原始描述
-      // 我们不强行拼“协议”，协议让 Stash 自动显示
-      const headParts = []
-        .concat(firstName, usflag, nNames, country)
-        .filter(Boolean);
+      // 组装：🇺🇸 美国-0.1倍 | 原后缀（序号稍后由 jxh 加 01/02）
+      const headParts = [];
+      if (nf && FNAME) headParts.push(FNAME);
+      if (usflag) headParts.push(usflag);
+      if (!nf && FNAME) headParts.push(FNAME);
+      headParts.push(country);
 
-      // 把原名里 “| 后面内容”保留下来
-      const suffix = (() => {
-        const idx = originalName.indexOf("|");
-        if (idx !== -1) return originalName.slice(idx).trim(); // 包括 |
-        // 没有 | 就保留原名里国家之外的内容（尽量少动）
-        return "";
-      })();
-
-      // 把倍率放在国家后面（你截图是 美国01-0.1倍 | xxx）
-      // 注意：01 在 jxh 之后才出现，所以这里先放 “-0.1倍”
-      const ratePart = rateKeep ? `-${rateKeep.replace("x","倍").replace("×","倍")}` : "";
-
-      // 最终 head：🇺🇸 美国-0.1倍  （序号稍后自动变成 美国01-0.1倍）
+      const ratePart = rateKeep ? `-${rateKeep}` : "";
       e.name = headParts.join(FGF) + ratePart + (suffix ? ` ${suffix}` : "");
 
-      // ✅ 自定义保留关键字（如果你用 blkey）
-      if (retainKey && retainKey.length) {
-        e.name = e.name + FGF + (Array.isArray(retainKey) ? retainKey.join(FGF) : retainKey);
-      }
-
-      // ✅ 保留固定标签（如果你想把 UDP/IPLC 这类也显示在名字里）
-      // 你如果只想“倍率 + 原始描述”，那就把下面两行注释掉
+      // 如果你不想把 tagsKeep（udp/ipLC 等）塞进名字，注释下一行即可
       if (tagsKeep) e.name = e.name + FGF + tagsKeep;
 
     } else {
@@ -275,9 +151,20 @@ function operator(pro) {
   return pro;
 }
 
-function main(proxies) {
-  const out = operator(proxies);
-  return out;
-}
-
-module.exports = main;
+/**
+ * ✅ Sub-Store 脚本入口：直接 return 处理后的 proxies
+ * 注意：Sub-Store 传入的是对象，通常是：
+ * { proxies: [...] } 或直接是 [...]（不同版本不同）
+ */
+(function () {
+  // 兼容两种输入
+  if (Array.isArray($data)) {
+    return operator($data);
+  }
+  if ($data && Array.isArray($data.proxies)) {
+    $data.proxies = operator($data.proxies);
+    return $data;
+  }
+  // 兜底：原样返回
+  return $data;
+})();
