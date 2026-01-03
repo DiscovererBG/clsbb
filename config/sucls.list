@@ -1,7 +1,8 @@
 /**
- * Sub-Store rename.js（Sub-Store 环境版：不使用 module.exports）
- * 目标：保持机场原生命名风格（倍率/高速/推荐/运营商等全部保留）
- * 只做：国家识别 + 输出格式 + 序号整理 +（可选）国旗
+ * Sub-Store rename.js（长期版）
+ * ✅ 输出：国旗 + 国家 + 倍率（从机场原名提取）+ 原“| 后缀”
+ * ✅ 协议显示：不用写进名字（Stash/Mihomo 自己会显示 vless / hy2 / udp / xudp）
+ *    你要的“像示例那样协议自动识别显示”，本质是客户端 UI 显示，不是改名脚本生成。
  *
  * 推荐参数：#flag&bl&blgd&nm
  */
@@ -9,9 +10,7 @@
 const inArg = $arguments;
 
 const bl = inArg.bl || false,
-  nf = inArg.nf || false,
   blgd = inArg.blgd || false,
-  numone = inArg.one || false,
   addflag = inArg.flag || false,
   nm = inArg.nm || false;
 
@@ -48,26 +47,12 @@ function getList(arg) {
   }
 }
 
-// ✅ 倍率：只做“提取保留”，不改协议字段
 const RATE_RE = /((\d{1,3}\.)?\d+)\s*(倍|x|X|×)/;
-const SUPER_RE = /(高倍|ˣ²|ˣ³|ˣ⁴|ˣ⁵|ˣ¹⁰)/i;
-
-// ✅ 固定标签保留（可选显示到名字末尾）
-const TAG_RE_LIST = [
-  /IPLC/i, /IEPL/i, /专线/i, /高速/i, /推荐/i,
-  /\budp\b/i, /\bxudp\b/i, /\bhy2\b/i, /\bhysteria2\b/i,
-  /\bgpt\b/i
-];
-
-let GetK = false, AMK = [];
-function ObjKA(i) { GetK = true; AMK = Object.entries(i); }
 
 // prettier-ignore
 function jxh(e) { const n = e.reduce((e, n) => { const t = e.find((e) => e.name === n.name); if (t) { t.count++; t.items.push({ ...n, name: `${n.name}${XHFGF}${t.count.toString().padStart(2, "0")}`, }); } else { e.push({ name: n.name, count: 1, items: [{ ...n, name: `${n.name}${XHFGF}01` }], }); } return e; }, []);const t=(typeof Array.prototype.flatMap==='function'?n.flatMap((e) => e.items):n.reduce((acc, e) => acc.concat(e.items),[])); e.splice(0, e.length, ...t); return e;}
-// prettier-ignore
-function oneP(e) { const t = e.reduce((e, t) => { const n = t.name.replace(/[^A-Za-z0-9\u00C0-\u017F\u4E00-\u9FFF]+\d+$/, ""); if (!e[n]) { e[n] = []; } e[n].push(t); return e; }, {}); for (const e in t) { if (t[e].length === 1 && t[e][0].name.endsWith("01")) { t[e][0].name= t[e][0].name.replace(/[^.]01/, "") } } return e; }
 
-function operator(pro) {
+function operator(proxies) {
   const Allmap = {};
   const outList = getList(outputName);
 
@@ -81,90 +66,54 @@ function operator(pro) {
     });
   });
 
-  !GetK && ObjKA(Allmap);
+  const AMK = Object.entries(Allmap);
 
-  pro.forEach((e) => {
-    const originalName = e.name;
+  proxies.forEach((e) => {
+    const originalName = e.name || "";
 
     // 国家匹配
     const findKey = AMK.find(([key]) => originalName.includes(key));
 
-    // 提取 “| 后缀” 保留机场风格
+    // 保留机场“| 后缀”
     const suffix = (() => {
       const idx = originalName.indexOf("|");
       if (idx !== -1) return originalName.slice(idx).trim();
       return "";
     })();
 
-    // 倍率保留（默认统一成 “0.1倍” 这种机场风格）
+    // 倍率提取：0.1倍 / 2倍 / 3x ...
     let rateKeep = "";
     if (bl) {
       const m = originalName.match(RATE_RE);
       if (m && m[1]) rateKeep = `${m[1]}倍`;
-      if (!rateKeep && SUPER_RE.test(originalName)) {
-        const ms = originalName.match(SUPER_RE);
-        rateKeep = ms ? ms[0] : "";
-      }
-    }
-
-    // 标签保留（可选）
-    let tagsKeep = "";
-    if (blgd) {
-      for (const r of TAG_RE_LIST) {
-        const mm = originalName.match(r);
-        if (mm) { tagsKeep = mm[0]; break; }
-      }
     }
 
     if (findKey?.[1]) {
       const country = findKey[1];
-      let usflag = "";
 
+      // 国旗
+      let flagStr = "";
       if (addflag) {
         const index = outList.indexOf(country);
-        if (index !== -1) usflag = FG[index];
+        if (index !== -1) flagStr = FG[index];
       }
 
-      // 组装：🇺🇸 美国-0.1倍 | 原后缀（序号稍后由 jxh 加 01/02）
-      const headParts = [];
-      if (nf && FNAME) headParts.push(FNAME);
-      if (usflag) headParts.push(usflag);
-      if (!nf && FNAME) headParts.push(FNAME);
-      headParts.push(country);
-
+      // 拼接：🇺🇸 美国-0.1倍 | 高速专线推荐
+      const head = [flagStr, FNAME, country].filter(Boolean).join(FGF);
       const ratePart = rateKeep ? `-${rateKeep}` : "";
-      e.name = headParts.join(FGF) + ratePart + (suffix ? ` ${suffix}` : "");
-
-      // 如果你不想把 tagsKeep（udp/ipLC 等）塞进名字，注释下一行即可
-      if (tagsKeep) e.name = e.name + FGF + tagsKeep;
+      e.name = head + ratePart + (suffix ? ` ${suffix}` : "");
 
     } else {
-      // 没匹配到国家
+      // 未匹配国家：nm=true 保留原名；否则丢弃
       if (nm) e.name = (FNAME ? (FNAME + FGF) : "") + originalName;
       else e.name = null;
     }
   });
 
-  pro = pro.filter((e) => e.name !== null);
-  jxh(pro);
-  numone && oneP(pro);
-  return pro;
-}
+  proxies = proxies.filter((e) => e.name !== null);
 
-/**
- * ✅ Sub-Store 脚本入口：直接 return 处理后的 proxies
- * 注意：Sub-Store 传入的是对象，通常是：
- * { proxies: [...] } 或直接是 [...]（不同版本不同）
- */
-(function () {
-  // 兼容两种输入
-  if (Array.isArray($data)) {
-    return operator($data);
-  }
-  if ($data && Array.isArray($data.proxies)) {
-    $data.proxies = operator($data.proxies);
-    return $data;
-  }
-  // 兜底：原样返回
-  return $data;
-})();
+  // 序号：01/02/03
+  jxh(proxies);
+
+  return proxies;
+}
